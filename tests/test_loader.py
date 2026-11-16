@@ -2,10 +2,10 @@
 
 from datetime import date
 from pathlib import Path
-from typing import Any
 
 import pytest
 
+from kzp_lab06.models import Booking
 from kzp_lab06.errors import DataError
 from kzp_lab06.loader import iter_records, load_records, parse_row
 
@@ -19,7 +19,7 @@ def write_csv(tmp_path: Path, text: str) -> Path:
     return path
 
 
-def test_load_control_file(data_dir: Path, records: list[dict[str, Any]]) -> None:
+def test_load_control_file(data_dir: Path, records: list[Booking]) -> None:
     """Контрольний файл дає сім типізованих записів у порядку файла."""
     assert load_records(data_dir / "input.csv") == records
 
@@ -28,7 +28,7 @@ def test_fields_are_converted_to_types(tmp_path: Path) -> None:
     """Текстові поля стають int, date і float, а похідні поля обчислюються."""
     path = write_csv(tmp_path, HEADER + " 101 ,Anna Bell,2026-01-04,2026-01-06, 150.50 \n")
     record = load_records(path)[0]
-    assert record == {
+    assert record.as_dict() == {
         "room": 101,
         "guest": "Anna Bell",
         "check_in": date(2026, 1, 4),
@@ -37,20 +37,20 @@ def test_fields_are_converted_to_types(tmp_path: Path) -> None:
         "nights": 2,
         "cost": 301.0,
     }
-    assert isinstance(record["room"], int)
-    assert isinstance(record["rate"], float)
+    assert isinstance(record.room, int)
+    assert isinstance(record.rate, float)
 
 
 def test_guest_name_is_normalized(tmp_path: Path) -> None:
     """Зайві пробіли в імені прибираються."""
     path = write_csv(tmp_path, HEADER + "101,  Anna   Bell ,2026-01-04,2026-01-06,150\n")
-    assert load_records(path)[0]["guest"] == "Anna Bell"
+    assert load_records(path)[0].guest == "Anna Bell"
 
 
 def test_text_with_comma_quotes_and_cyrillic(tmp_path: Path) -> None:
     """Кома й лапки в лапках та кирилиця читаються як одне поле."""
     text = HEADER + '101,"Коваленко, Марія ""Маша""",2026-01-04,2026-01-06,150\n'
-    assert load_records(write_csv(tmp_path, text))[0]["guest"] == 'Коваленко, Марія "Маша"'
+    assert load_records(write_csv(tmp_path, text))[0].guest == 'Коваленко, Марія "Маша"'
 
 
 def test_windows_line_endings_are_accepted(tmp_path: Path) -> None:
@@ -63,7 +63,7 @@ def test_column_order_does_not_matter(tmp_path: Path) -> None:
     """Стовпці знаходяться за назвою, а не за позицією."""
     text = "rate,room,check_out,check_in,guest\n150,101,2026-01-06,2026-01-04,Anna Bell\n"
     record = load_records(write_csv(tmp_path, text))[0]
-    assert (record["room"], record["rate"], record["nights"]) == (101, 150.0, 2)
+    assert (record.room, record.rate, record.nights) == (101, 150.0, 2)
 
 
 def test_header_only_file_gives_empty_list(data_dir: Path) -> None:
@@ -146,8 +146,8 @@ def test_zero_rate_is_allowed(tmp_path: Path) -> None:
     record = load_records(write_csv(tmp_path, HEADER + "102,Clark Kent,2026-01-05,2026-01-06,0\n"))[
         0
     ]
-    assert record["rate"] == 0.0
-    assert record["cost"] == 0.0
+    assert record.rate == 0.0
+    assert record.cost == 0.0
 
 
 def test_missing_file_keeps_os_error(tmp_path: Path) -> None:
@@ -184,7 +184,7 @@ def test_iter_records_is_lazy(tmp_path: Path) -> None:
     """Генератор повертає коректні записи до того, як дійде до пошкодженого рядка."""
     text = HEADER + "101,Anna Bell,2026-01-04,2026-01-06,150\n205,Diana Prince,x,y,z\n"
     iterator = iter_records(write_csv(tmp_path, text))
-    assert next(iterator)["guest"] == "Anna Bell"
+    assert next(iterator).guest == "Anna Bell"
     with pytest.raises(DataError, match="Рядок 3"):
         next(iterator)
 

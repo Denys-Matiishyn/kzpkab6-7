@@ -2,10 +2,10 @@
 
 import random
 from pathlib import Path
-from typing import Any
 
 from conftest import REFERENCE_DATE
 
+from kzp_lab06.models import Booking
 from kzp_lab06.analysis import build_report
 from kzp_lab06.reporting import format_report, write_report
 
@@ -23,13 +23,13 @@ EMPTY_REPORT = (
 )
 
 
-def test_report_matches_committed_example(records: list[dict[str, Any]], data_dir: Path) -> None:
+def test_report_matches_committed_example(records: list[Booking], data_dir: Path) -> None:
     """Текст звіту збігається зі збереженим прикладом reports/summary.txt."""
     expected = (data_dir.parent / "reports" / "summary.txt").read_text(encoding="utf-8")
     assert format_report(build_report(records, REFERENCE_DATE)) == expected
 
 
-def test_report_lines(records: list[dict[str, Any]]) -> None:
+def test_report_lines(records: list[Booking]) -> None:
     """Звіт містить показники варіанта з форматуванням до двох знаків."""
     text = format_report(build_report(records, REFERENCE_DATE))
     assert "Активні бронювання на дату: 4\n" in text
@@ -41,7 +41,7 @@ def test_report_lines(records: list[dict[str, Any]]) -> None:
     assert text.endswith("Сумарна вартість: 21293.50\n")
 
 
-def test_report_does_not_depend_on_input_order(records: list[dict[str, Any]]) -> None:
+def test_report_does_not_depend_on_input_order(records: list[Booking]) -> None:
     """Перемішані записи дають той самий текст звіту."""
     expected = format_report(build_report(records, REFERENCE_DATE))
     shuffled = list(records)

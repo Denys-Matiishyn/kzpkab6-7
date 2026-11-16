@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from datetime import date
 from pathlib import Path
 
-from .analysis import build_report
+from .analysis import build_report, revenue_by_tier, total_revenue
 from .errors import DataError
 from .loader import load_records
 from .reporting import format_report, write_report
@@ -26,6 +26,15 @@ def _print_error(message: str) -> None:
     except (AttributeError, ValueError):
         pass
     print(message, file=sys.stderr)
+
+
+def _print_out(text: str) -> None:
+    """Виводить текст у stdout у кодуванні UTF-8."""
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError):
+        pass
+    print(text, end="")
 
 
 def _iso_date(text: str) -> date:
@@ -50,7 +59,21 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_REFERENCE_DATE,
         help=f"дата відбору активних бронювань (типово {DEFAULT_REFERENCE_DATE.isoformat()})",
     )
+    parser.add_argument(
+        "--details",
+        action="store_true",
+        help="вивести в консоль ціни з надбавками за рівнями обслуговування",
+    )
     return parser
+
+
+def format_details(records: list) -> str:
+    """Форматує ціни з надбавками за рівнями; звіт у файлі від цього не змінюється."""
+    lines = ["Ціна з надбавками за рівнями:"]
+    for tier, amount in revenue_by_tier(records).items():
+        lines.append(f"  {tier}: {amount:.2f}")
+    lines.append(f"Разом: {total_revenue(records):.2f}")
+    return "\n".join(lines) + "\n"
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -74,6 +97,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     except OSError as error:
         _print_error(f"Не вдалося записати звіт: {args.output_report} ({error})")
         return EXIT_OUTPUT_ERROR
+    if args.details:
+        _print_out(format_details(records))
     return EXIT_OK
 
 
