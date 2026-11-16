@@ -2,35 +2,25 @@
 
 from datetime import date
 from pathlib import Path
-from typing import Any
 
 import pytest
+
+from kzp_lab06.models import Booking, create_booking
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 REFERENCE_DATE = date(2026, 1, 3)
 
 
-def make_record(
-    room: int, guest: str, check_in: str, check_out: str, rate: float
-) -> dict[str, Any]:
-    """Створює типізований запис так, як це робить loader."""
-    start = date.fromisoformat(check_in)
-    end = date.fromisoformat(check_out)
-    nights = (end - start).days
-    return {
-        "room": room,
-        "guest": guest,
-        "check_in": start,
-        "check_out": end,
-        "rate": rate,
-        "nights": nights,
-        "cost": nights * rate,
-    }
+def make_record(room: int, guest: str, check_in: str, check_out: str, rate: float) -> Booking:
+    """Створює об'єкт потрібного підтипу так, як це робить loader."""
+    return create_booking(
+        room, guest, date.fromisoformat(check_in), date.fromisoformat(check_out), rate
+    )
 
 
 @pytest.fixture
-def records() -> list[dict[str, Any]]:
-    """Сім записів контрольного набору data/input.csv."""
+def records() -> list[Booking]:
+    """Сім об'єктів контрольного набору data/input.csv."""
     return [
         make_record(101, "Doe, John", "2026-01-01", "2026-01-04", 150.0),
         make_record(101, "Anna Bell", "2026-01-04", "2026-01-06", 150.0),

@@ -1,7 +1,25 @@
-# kzp-lab06: звіт про бронювання готелю (Python)
+git status
+git checkout -b lab-07-oop# kzp-lab06: звіт про бронювання готелю (Python)
 
-Лабораторна робота № 6 з курсу «Кросплатформні засоби програмування», варіант 14 «Готель».
-Пакет читає CSV-файл бронювань, перетворює текстові поля на типізовані значення, обчислює показники й записує детермінований текстовий звіт.
+Лабораторні роботи № 6 і № 7 з курсу «Кросплатформні засоби програмування», варіант 14 «Готель».
+Пакет читає CSV-файл бронювань, перетворює рядки на об'єкти `StandardBooking` і `PremiumBooking`, обчислює показники й записує детермінований текстовий звіт.
+
+* ЛР № 6 (тег `v6.0.0`): записи — словники, обробка функціями.
+* ЛР № 7 (тег `v7.0.0`): записи — об'єкти з `@property`, підтипи зі спільною операцією `total_price()`, `@dataclass(frozen=True)` для підсумку. Формат CSV і текст звіту не змінилися.
+
+## Об'єктна модель (ЛР № 7)
+
+| Клас | Призначення |
+| :-- | :-- |
+| `Booking` | базовий клас: `__slots__`, властивості `room`, `guest`, `rate` із setter-перевіркою; `check_in`, `check_out`, `nights`, `cost`, `sort_key` лише для читання; `__str__`, `__repr__`, `__eq__` |
+| `StandardBooking` | `total_price() = cost × 1.05` (надбавка 5 %) |
+| `PremiumBooking` | `total_price() = cost × 1.15 + 50 × nights` (15 % і 50 грн за ніч) |
+| `create_booking` | обирає підтип: тариф від 1000.00 включно → Premium, інакше Standard |
+| `Priced` | `Protocol`: властивості `nights`, `tier`, метод `total_price()` |
+| `Occupancy`, `ReportSummary` | `@dataclass(frozen=True)`: завантаження номерів і підсумок звіту |
+| `ReportWriter` | контекстний менеджер: пише у тимчасовий файл і замінює звіт лише після успіху |
+
+Ціни округлюються до копійки (`Decimal`, `ROUND_HALF_UP`).
 
 ## Структура
 
@@ -9,17 +27,19 @@
 src/kzp_lab06/
 ├── __init__.py    # публічний мінімальний API
 ├── errors.py      # DataError
-├── loader.py      # читання CSV і перетворення полів
-├── analysis.py    # обчислення над записами
-├── reporting.py   # формування й запис звіту
+├── models.py      # Booking, підтипи, Priced, dataclass-підсумки
+├── loader.py      # читання CSV і перетворення рядка на об'єкт
+├── analysis.py    # обчислення над об'єктами через спільний протокол
+├── reporting.py   # формування звіту, ReportWriter
 └── cli.py         # аргументи командного рядка та коди завершення
 tests/             # pytest
-data/              # input.csv, empty.csv, broken.csv
+tests/legacy_v6/   # незмінна словникова модель ЛР № 6 для порівняння звітів
+data/              # input.csv (контрольний), input-lab07.csv, empty.csv, broken.csv
 reports/summary.txt  # приклад очікуваного звіту
-tools/measure_memory.py  # порівняння списку й генератора
+tools/measure_memory.py  # пам'ять: словники проти об'єктів, список проти генератора
 ```
 
-`loader` не друкує звіт, `analysis` не відкриває файли, `reporting` не читає CSV.
+`models` не читає файли, `loader` не будує звіт, `analysis` не відкриває файли й не перевіряє конкретний підтип, `reporting` не читає CSV.
 
 ## Формат CSV
 
@@ -67,6 +87,16 @@ python -m pip install -e ".[dev]"
 python -m kzp_lab06.cli data/input.csv reports/summary.txt
 kzp-lab06 data/input.csv reports/summary.txt
 kzp-lab06 data/input.csv reports/february.txt --reference-date 2026-02-01
+kzp-lab06 data/input.csv reports/summary.txt --details
+```
+
+`--details` додатково друкує в консоль ціну з надбавками за рівнями (файл звіту не змінюється):
+
+```text
+Ціна з надбавками за рівнями:
+  Premium: 20150.00
+  Standard: 4508.18
+Разом: 24658.18
 ```
 
 | Код завершення | Значення |
@@ -126,15 +156,15 @@ python -m build
 
 ```text
 python -m venv .venv-wheel
-.venv-wheel\Scripts\python -m pip install --no-deps dist\kzp_lab06-6.0.0-py3-none-any.whl
+.venv-wheel\Scripts\python -m pip install --no-deps dist\kzp_lab06-7.0.0-py3-none-any.whl
 .venv-wheel\Scripts\python -m kzp_lab06.cli data\input.csv reports\wheel-summary.txt
 ```
 
 У macOS та Ubuntu замість `.venv-wheel\Scripts\python` використовується `.venv-wheel/bin/python`.
 
-## Потокова обробка (завдання із зірочкою)
+## Потокова обробка та пам'ять
 
-`loader.iter_records` є генератором, а `analysis.stream_summary` рахує показники за один прохід. Порівняння зі списком:
+`loader.iter_records` є генератором, а `analysis.stream_summary` рахує показники за один прохід. Скрипт порівнює пам'ять словникової й об'єктної моделей, а також списку й генератора:
 
 ```text
 python tools/measure_memory.py 200000

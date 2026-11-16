@@ -115,3 +115,24 @@ def test_importing_modules_does_not_run_cli(data_dir: Path) -> None:
     assert result.returncode == 0
     assert result.stdout == b""
     assert result.stderr == b""
+
+
+def test_details_option_prints_prices_by_tier(
+    data_dir: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """--details виводить ціни з надбавками в консоль, а файл звіту не змінюється."""
+    output = tmp_path / "summary.txt"
+    assert main([str(data_dir / "input.csv"), str(output), "--details"]) == EXIT_OK
+    assert capsys.readouterr().out == (
+        "Ціна з надбавками за рівнями:\n  Premium: 20150.00\n  Standard: 4508.18\nРазом: 24658.18\n"
+    )
+    expected = (data_dir.parent / "reports" / "summary.txt").read_text(encoding="utf-8")
+    assert output.read_text(encoding="utf-8") == expected
+
+
+def test_without_details_nothing_is_printed(
+    data_dir: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Без --details успішний запуск нічого не друкує."""
+    assert main([str(data_dir / "input.csv"), str(tmp_path / "s.txt")]) == EXIT_OK
+    assert capsys.readouterr().out == ""

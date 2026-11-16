@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "kzp-lab06"
-version = "6.0.0"
-description = "Звіт про бронювання готелю з CSV (лабораторна робота № 6, варіант 14)"
+version = "7.0.0"
+description = "Об'єктна обробка бронювань готелю з CSV (лабораторні роботи № 6–7, варіант 14)"
 readme = "README.md"
 requires-python = ">=3.11"
 

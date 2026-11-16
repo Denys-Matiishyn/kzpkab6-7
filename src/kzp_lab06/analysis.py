@@ -1,74 +1,78 @@
-"""Обчислення над записами бронювань. Модуль не читає й не записує файли."""
+"""Обчислення над об'єктами бронювань. Модуль не читає й не записує файли.
+
+Функції не перевіряють конкретний підтип: вони викликають властивості й методи,
+спільні для всіх бронювань (протокол ``Priced``).
+"""
 
 from collections.abc import Iterable
 from datetime import date
 from itertools import islice
 from typing import Any
 
-Record = dict[str, Any]
+from .models import Booking, Occupancy, Priced, ReportSummary
 
-NUMERIC_METRICS = ("cost", "nights", "rate")
-
-
-def is_active(record: Record, reference_date: date) -> bool:
-    """Перевіряє, що бронювання активне на дату: check_in <= дата < check_out."""
-    return record["check_in"] <= reference_date < record["check_out"]
+NUMERIC_METRICS = ("cost", "nights", "rate", "total_price")
 
 
-def active_on(records: Iterable[Record], reference_date: date) -> list[Record]:
+def active_on(bookings: Iterable[Booking], reference_date: date) -> list[Booking]:
     """Відбирає бронювання, активні на задану дату, у порядку номера кімнати й заїзду."""
-    selected = [record for record in records if is_active(record, reference_date)]
-    return sorted(selected, key=lambda record: (record["room"], record["check_in"]))
+    selected = [booking for booking in bookings if booking.is_active(reference_date)]
+    return sorted(selected, key=lambda booking: booking.sort_key)
 
 
-def count_by_rate(records: Iterable[Record]) -> dict[float, int]:
+def count_by_rate(bookings: Iterable[Booking]) -> dict[float, int]:
     """Рахує бронювання за тарифом; ключі словника йдуть за зростанням тарифу."""
     counts: dict[float, int] = {}
-    for record in records:
-        counts[record["rate"]] = counts.get(record["rate"], 0) + 1
+    for booking in bookings:
+        counts[booking.rate] = counts.get(booking.rate, 0) + 1
     return {rate: counts[rate] for rate in sorted(counts)}
 
 
-def unique_guests(records: Iterable[Record]) -> set[str]:
+def unique_guests(bookings: Iterable[Booking]) -> set[str]:
     """Повертає множину гостей без повторів."""
-    return {record["guest"] for record in records}
+    return {booking.guest for booking in bookings}
 
 
-def occupancy(records: list[Record], reference_date: date) -> dict[str, float | int]:
+def occupancy(bookings: list[Booking], reference_date: date) -> Occupancy:
     """Обчислює завантаження номерів на дату.
 
-    Усіма номерами готелю вважаються різні номери з файла. Для порожнього набору
-    повертаються нулі.
+    Усіма номерами готелю вважаються різні номери з файла.
     """
-    rooms = {record["room"] for record in records}
-    occupied = {record["room"] for record in records if is_active(record, reference_date)}
-    percent = 100.0 * len(occupied) / len(rooms) if rooms else 0.0
-    return {"occupied": len(occupied), "total": len(rooms), "percent": percent}
+    rooms = {booking.room for booking in bookings}
+    occupied = {booking.room for booking in bookings if booking.is_active(reference_date)}
+    return Occupancy(occupied=len(occupied), total=len(rooms))
 
 
-def longest_stay(records: Iterable[Record]) -> Record | None:
+def longest_stay(bookings: Iterable[Booking]) -> Booking | None:
     """Повертає найдовше проживання або None для порожнього набору.
 
     За однакової тривалості вибирається менший номер кімнати, далі раніший заїзд.
     """
     return min(
-        records,
-        key=lambda record: (-record["nights"], record["room"], record["check_in"]),
+        bookings,
+        key=lambda booking: (-booking.nights, booking.room, booking.check_in),
         default=None,
     )
 
 
+def _metric_value(booking: Booking, metric: str) -> float:
+    """Повертає значення метрики: властивість або результат методу без аргументів."""
+    value = getattr(booking, metric)
+    return float(value() if callable(value) else value)
+
+
 def make_summary(
-    records: list[Record],
+    bookings: list[Booking],
     *metrics: str,
     minimum_nights: int = 1,
     **labels: str,
 ) -> dict[str, Any]:
-    """Обчислює суми вибраних числових метрик для проживань не коротших за мінімум.
+    """Обчислює суми вибраних метрик для проживань не коротших за мінімум.
 
-    ``metrics`` — назви числових полів (``cost``, ``nights``, ``rate``), ``labels`` задає
-    підписи результатів. Невідома метрика або підпис для невибраної метрики спричиняє
-    ``ValueError``. Якщо жоден запис не пройшов відбір, суми дорівнюють 0.0.
+    ``metrics`` — назви числових властивостей або методів (``cost``, ``nights``, ``rate``,
+    ``total_price``), ``labels`` задає підписи результатів. Невідома метрика або підпис для
+    невибраної метрики спричиняє ``ValueError``. Якщо жоден запис не пройшов відбір,
+    суми дорівнюють 0.0.
     """
     unknown = [metric for metric in metrics if metric not in NUMERIC_METRICS]
     if unknown:
@@ -77,43 +81,61 @@ def make_summary(
     if stray:
         raise ValueError(f"Підпис для невибраної метрики: {stray[0]}")
 
-    # Відбір виконується один раз, після чого всі метрики використовують selected.
-    selected = [record for record in records if record["nights"] >= minimum_nights]
+    selected = [booking for booking in bookings if booking.nights >= minimum_nights]
     result: dict[str, Any] = {"count": len(selected)}
     for metric in metrics:
-        result[labels.get(metric, metric)] = float(sum(record[metric] for record in selected))
+        result[labels.get(metric, metric)] = float(
+            sum(_metric_value(booking, metric) for booking in selected)
+        )
     return result
 
 
-def build_report(records: list[Record], reference_date: date) -> dict[str, Any]:
-    """Збирає всі показники звіту в один словник без форматування тексту."""
-    totals = make_summary(records, "nights", "cost")
-    return {
-        "reference_date": reference_date,
-        "count": len(records),
-        "active": active_on(records, reference_date),
-        "occupancy": occupancy(records, reference_date),
-        "count_by_rate": count_by_rate(records),
-        "guests": unique_guests(records),
-        "longest_stay": longest_stay(records),
-        "total_nights": int(totals["nights"]),
-        "total_cost": totals["cost"],
-    }
+def total_revenue(items: Iterable[Priced]) -> float:
+    """Сумарна ціна проживань з надбавками; працює з будь-яким об'єктом протоколу Priced."""
+    return sum(item.total_price() for item in items)
 
 
-def preview(records: Iterable[Record], limit: int = 3) -> list[Record]:
-    """Повертає перші ``limit`` записів, не читаючи решту ітератора."""
+def revenue_by_tier(items: Iterable[Priced]) -> dict[str, float]:
+    """Сумарна ціна за рівнями обслуговування; ключі за алфавітом.
+
+    Функція не перевіряє класи: назву рівня й формулу ціни надає сам об'єкт.
+    """
+    totals: dict[str, float] = {}
+    for item in items:
+        totals[item.tier] = totals.get(item.tier, 0.0) + item.total_price()
+    return {tier: totals[tier] for tier in sorted(totals)}
+
+
+def most_expensive(items: Iterable[Priced]) -> Priced | None:
+    """Повертає об'єкт із найбільшою ціною або None для порожнього входу."""
+    return max(items, key=lambda item: item.total_price(), default=None)
+
+
+def build_report(bookings: list[Booking], reference_date: date) -> ReportSummary:
+    """Збирає всі показники звіту в незмінний підсумок без форматування тексту."""
+    totals = make_summary(bookings, "nights", "cost")
+    return ReportSummary(
+        reference_date=reference_date,
+        count=len(bookings),
+        active=tuple(active_on(bookings, reference_date)),
+        occupancy=occupancy(bookings, reference_date),
+        count_by_rate=tuple(count_by_rate(bookings).items()),
+        guests=tuple(sorted(unique_guests(bookings))),
+        longest_stay=longest_stay(bookings),
+        total_nights=int(totals["nights"]),
+        total_cost=totals["cost"],
+    )
+
+
+def preview(bookings: Iterable[Booking], limit: int = 3) -> list[Booking]:
+    """Повертає перші ``limit`` об'єктів, не читаючи решту ітератора."""
     if limit < 0:
         raise ValueError("limit не може бути від'ємним")
-    return list(islice(records, limit))
+    return list(islice(bookings, limit))
 
 
-def stream_summary(records: Iterable[Record], reference_date: date) -> dict[str, Any]:
-    """Обчислює показники за один прохід, не зберігаючи записи в пам'яті.
-
-    Приймає будь-який ітератор, зокрема генератор ``loader.iter_records``. У пам'яті
-    лишаються тільки лічильники, множини номерів і гостей та один найдовший запис.
-    """
+def stream_summary(bookings: Iterable[Booking], reference_date: date) -> dict[str, Any]:
+    """Обчислює показники за один прохід, не зберігаючи об'єкти в пам'яті."""
     count = 0
     total_nights = 0
     total_cost = 0.0
@@ -121,18 +143,18 @@ def stream_summary(records: Iterable[Record], reference_date: date) -> dict[str,
     occupied: set[int] = set()
     guests: set[str] = set()
     counts: dict[float, int] = {}
-    longest: Record | None = None
+    longest: Booking | None = None
 
-    for record in records:
+    for booking in bookings:
         count += 1
-        total_nights += record["nights"]
-        total_cost += record["cost"]
-        rooms.add(record["room"])
-        guests.add(record["guest"])
-        counts[record["rate"]] = counts.get(record["rate"], 0) + 1
-        if is_active(record, reference_date):
-            occupied.add(record["room"])
-        longest = longest_stay([record] if longest is None else [longest, record])
+        total_nights += booking.nights
+        total_cost += booking.cost
+        rooms.add(booking.room)
+        guests.add(booking.guest)
+        counts[booking.rate] = counts.get(booking.rate, 0) + 1
+        if booking.is_active(reference_date):
+            occupied.add(booking.room)
+        longest = longest_stay([booking] if longest is None else [longest, booking])
 
     return {
         "count": count,

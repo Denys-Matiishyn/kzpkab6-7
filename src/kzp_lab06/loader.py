@@ -1,15 +1,12 @@
-"""Читання CSV-файла бронювань і перетворення текстових полів на типізовані значення."""
+"""Читання CSV-файла бронювань і перетворення рядків на об'єкти моделі."""
 
 import csv
-import math
 from collections.abc import Iterator
 from datetime import date
 from pathlib import Path
-from typing import Any
 
 from .errors import DataError
-
-Record = dict[str, Any]
+from .models import Booking, create_booking
 
 REQUIRED_FIELDS = ("room", "guest", "check_in", "check_out", "rate")
 
@@ -54,11 +51,11 @@ def _parse_date(row: dict[str, str], field: str, row_number: int) -> date:
         ) from error
 
 
-def parse_row(row: dict[str, str], row_number: int) -> Record:
-    """Перетворює один рядок CSV на запис із типізованими значеннями.
+def parse_row(row: dict[str, str], row_number: int) -> Booking:
+    """Перетворює один рядок CSV на об'єкт StandardBooking або PremiumBooking.
 
-    Запис містить поля ``room`` (int), ``guest`` (str), ``check_in`` і ``check_out`` (date),
-    ``rate`` (float) та похідні ``nights`` (int) і ``cost`` (float).
+    Loader перетворює текст на типи, а перевірку значень виконують властивості моделі.
+    Помилка моделі доповнюється номером рядка; першопричина зберігається.
     """
     # DictReader кладе зайві значення під ключ None, а відсутні заповнює значенням None.
     if None in row:
@@ -68,41 +65,21 @@ def parse_row(row: dict[str, str], row_number: int) -> Record:
         raise DataError(f"Рядок {row_number}: немає значення поля {absent[0]}")
 
     room = _parse_int(row, "room", row_number)
-    # Зайві пробіли прибираються, щоб «Anna  Bell» і «Anna Bell» були одним гостем.
-    guest = " ".join(row["guest"].split())
+    guest = row["guest"]
     check_in = _parse_date(row, "check_in", row_number)
     check_out = _parse_date(row, "check_out", row_number)
     rate = _parse_float(row, "rate", row_number)
-
-    if room <= 0:
-        raise DataError(f"Рядок {row_number}: поле room має бути більшим за нуль")
-    if not guest:
-        raise DataError(f"Рядок {row_number}: поле guest порожнє")
-    if check_out <= check_in:
-        raise DataError(f"Рядок {row_number}: поле check_out має бути пізніше за check_in")
-    # float() приймає тексти "nan" та "inf"; для тарифу вони не мають змісту.
-    if not math.isfinite(rate):
-        raise DataError(f"Рядок {row_number}: поле rate має бути скінченним числом")
-    if rate < 0:
-        raise DataError(f"Рядок {row_number}: поле rate не може бути від'ємним")
-
-    nights = (check_out - check_in).days
-    return {
-        "room": room,
-        "guest": guest,
-        "check_in": check_in,
-        "check_out": check_out,
-        "rate": rate,
-        "nights": nights,
-        "cost": nights * rate,
-    }
+    try:
+        return create_booking(room, guest, check_in, check_out, rate)
+    except (TypeError, ValueError) as error:
+        raise DataError(f"Рядок {row_number}: {error}") from error
 
 
-def iter_records(path: Path) -> Iterator[Record]:
-    """Читає CSV потоково й повертає записи по одному.
+def iter_records(path: Path) -> Iterator[Booking]:
+    """Читає CSV потоково й повертає об'єкти по одному.
 
-    Генератор не тримає весь файл у пам'яті, тому підходить для великих файлів.
-    Файл відкривається під час першого звернення до генератора.
+    Генератор не тримає весь файл у пам'яті. Файл відкривається під час першого
+    звернення до генератора.
     """
     try:
         # newline="" передає керування роздільниками рядків модулю csv.
@@ -118,8 +95,8 @@ def iter_records(path: Path) -> Iterator[Record]:
         raise DataError(f"Пошкоджений CSV: {error}") from error
 
 
-def load_records(path: Path) -> list[Record]:
-    """Читає CSV-файл і повертає список записів у порядку файла.
+def load_records(path: Path) -> list[Booking]:
+    """Читає CSV-файл і повертає список об'єктів у порядку файла.
 
     Файл лише із заголовком дає порожній список. Файл без заголовка, з іншим заголовком
     або з некоректним рядком спричиняє ``DataError``.
