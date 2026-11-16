@@ -1,0 +1,22 @@
+# віртуальні середовища
+.venv/
+.venv-*/
+
+# результати збирання
+build/
+dist/
+*.egg-info/
+
+# кеші
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+
+# локальні звіти (приклад reports/summary.txt зберігається в репозиторії)
+reports/*
+!reports/summary.txt
+
+# IDE
+.idea/
+.vscode/
